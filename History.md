@@ -1,5 +1,44 @@
 # Release History
 
+## v2.0.0 / 2020-08-23
+
+Node.js 10 or later is required.
+
+* Fix unexpected flipping in certain cases involving double quotes or comments in selectors (YairRand, [#35](https://github.com/cssjanus/cssjanus/issues/35))
+* Drop support for Node.js 6 and 8 (Timo Tijhof)
+
+## v1.3.2 / 2019-05-10
+
+* test: Add a large test case to catch backtrack limit problem (James Forrester)
+* Document a known backtrack issue, not yet known to affect Node.js (Timo Tijhof)
+
+## v1.3.1 / 2018-10-15
+
+* Fix bug where `transform` didn't flip on lines without semicolon (YairRand)
+
+## v1.3.0 / 2018-07-03
+
+* Fix unintended flipping of selectors containing a backslash (YairRand)
+* Make cssjanus.js compatible with Closure Compiler (Chris Scribner)
+* Drop support for Node.js 4; This release requires Node 6 (Timo Tijhof)
+
+## v1.2.2 / 2018-02-11
+
+* build: Add 'files' publishing whitelist to package.json (Timo Tijhof)
+
+## v1.2.1 / 2017-10-23
+
+* Drop support for Node.js v0.10 and v0.12 (Timo Tijhof)
+* test: Cover border-radius with three values (Timo Tijhof)
+
+## v1.2.0 / 2017-03-14
+
+* Flip `translate(x[,y,z])` and `translateX(x)` (Ed Sanders)
+
+## v1.1.3 / 2016-12-23
+
+* Do not flip offset-y in text-shadow, even when color isn't as first value (Ed Sanders)
+
 ## v1.1.2 / 2015-02-03
 
 * Support !important and slash in border-radius values (Dominik Schilling)
@@ -27,7 +66,7 @@
 
 * Prevent issues with css selectors containing parentheses (Yoav Farhi)
 * Fix bgHorizontalPercentageRegExp to not be too greedy (Dion Hulse)
-* Support "/*!" syntax for @noflip (Tom Yam)
+* Support `/*!` syntax for @noflip (Tom Yam)
 
 ## v1.0.1 / 2013-08-08
 

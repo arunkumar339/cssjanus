@@ -98,7 +98,7 @@ function CSSJanus() {
 		commentToken = '`COMMENT`',
 		// Patterns
 		nonAsciiPattern = '[^\\u0020-\\u007e]',
-		unicodePattern = '(?:(?:\\[0-9a-f]{1,6})(?:\\r\\n|\\s)?)',
+		unicodePattern = '(?:(?:\\\\[0-9a-f]{1,6})(?:\\r\\n|\\s)?)',
 		numPattern = '(?:[0-9]*\\.[0-9]+|[0-9]+)',
 		unitPattern = '(?:em|ex|px|cm|mm|in|pt|pc|deg|rad|grad|ms|s|hz|khz|%)',
 		directionPattern = 'direction\\s*:\\s*',
@@ -117,14 +117,19 @@ function CSSJanus() {
 		fourNotationQuantPropsPattern = '((?:margin|padding|border-width)\\s*:\\s*)',
 		fourNotationColorPropsPattern = '((?:-color|border-style)\\s*:\\s*)',
 		colorPattern = '(#?' + nmcharPattern + '+|(?:rgba?|hsla?)\\([ \\d.,%-]+\\))',
-		urlCharsPattern = '(?:' + urlSpecialCharsPattern + '|' + nonAsciiPattern + '|' + escapePattern + ')*',
+		// The use of a lazy match ("*?") may cause a backtrack limit to be exceeded before finding
+		// the intended match. This affects 'urlCharsPattern' and 'lookAheadNotOpenBracePattern'.
+		// We have not yet found this problem on Node.js, but we have on PHP 7, where it was
+		// mitigated by using a possessive quantifier ("*+"), which are not supported in JS.
+		// See <https://github.com/cssjanus/php-cssjanus/issues/14> and <https://phabricator.wikimedia.org/T215746#4944830>.
+		urlCharsPattern = '(?:' + urlSpecialCharsPattern + '|' + nonAsciiPattern + '|' + escapePattern + ')*?',
 		lookAheadNotLetterPattern = '(?![a-zA-Z])',
-		lookAheadNotOpenBracePattern = '(?!(' + nmcharPattern + '|\\r?\\n|\\s|#|\\:|\\.|\\,|\\+|>|\\(|\\)|\\[|\\]|=|\\*=|~=|\\^=|\'[^\']*\'])*?{)',
-		lookAheadNotClosingParenPattern = '(?!' + urlCharsPattern + '?' + validAfterUriCharsPattern + '\\))',
-		lookAheadForClosingParenPattern = '(?=' + urlCharsPattern + '?' + validAfterUriCharsPattern + '\\))',
+		lookAheadNotOpenBracePattern = '(?!(' + nmcharPattern + '|\\r?\\n|\\s|#|\\:|\\.|\\,|\\+|>|\\(|\\)|\\[|\\]|=|\\*=|~=|\\^=|\'[^\']*\'|"[^"]*"|' + commentToken + ')*?{)',
+		lookAheadNotClosingParenPattern = '(?!' + urlCharsPattern + validAfterUriCharsPattern + '\\))',
+		lookAheadForClosingParenPattern = '(?=' + urlCharsPattern + validAfterUriCharsPattern + '\\))',
 		suffixPattern = '(\\s*(?:!important\\s*)?[;}])',
 		// Regular expressions
-		temporaryTokenRegExp = new RegExp( '`TMP`', 'g' ),
+		temporaryTokenRegExp = /`TMP`/g,
 		commentRegExp = new RegExp( commentPattern, 'gi' ),
 		noFlipSingleRegExp = new RegExp( '(' + noFlipPattern + lookAheadNotOpenBracePattern + '[^;}]+;?)', 'gi' ),
 		noFlipClassRegExp = new RegExp( '(' + noFlipPattern + charsWithinSelectorPattern + '})', 'gi' ),
@@ -146,8 +151,11 @@ function CSSJanus() {
 		borderRadiusRegExp = new RegExp( '(border-radius\\s*:\\s*)' + signedQuantPattern + '(?:(?:\\s+' + signedQuantPattern + ')(?:\\s+' + signedQuantPattern + ')?(?:\\s+' + signedQuantPattern + ')?)?' +
 			'(?:(?:(?:\\s*\\/\\s*)' + signedQuantPattern + ')(?:\\s+' + signedQuantPattern + ')?(?:\\s+' + signedQuantPattern + ')?(?:\\s+' + signedQuantPattern + ')?)?' + suffixPattern, 'gi' ),
 		boxShadowRegExp = new RegExp( '(box-shadow\\s*:\\s*(?:inset\\s*)?)' + signedQuantPattern, 'gi' ),
-		textShadow1RegExp = new RegExp( '(text-shadow\\s*:\\s*)' + colorPattern + '(\\s*)' + signedQuantPattern, 'gi' ),
-		textShadow2RegExp = new RegExp( '(text-shadow\\s*:\\s*)' + signedQuantPattern, 'gi' );
+		textShadow1RegExp = new RegExp( '(text-shadow\\s*:\\s*)' + signedQuantPattern + '(\\s*)' + colorPattern, 'gi' ),
+		textShadow2RegExp = new RegExp( '(text-shadow\\s*:\\s*)' + colorPattern + '(\\s*)' + signedQuantPattern, 'gi' ),
+		textShadow3RegExp = new RegExp( '(text-shadow\\s*:\\s*)' + signedQuantPattern, 'gi' ),
+		translateXRegExp = new RegExp( '(transform\\s*:[^;}]*)(translateX\\s*\\(\\s*)' + signedQuantPattern + '(\\s*\\))', 'gi' ),
+		translateRegExp = new RegExp( '(transform\\s*:[^;}]*)(translate\\s*\\(\\s*)' + signedQuantPattern + '((?:\\s*,\\s*' + signedQuantPattern + '){0,2}\\s*\\))', 'gi' );
 
 	/**
 	 * Invert the horizontal value of a background position property.
@@ -258,6 +266,8 @@ function CSSJanus() {
 	/**
 	 * @private
 	 * @param {string} match
+	 * @param {string} property
+	 * @param {string} offset
 	 * @return {string}
 	 */
 	function calculateNewShadow( match, property, offset ) {
@@ -267,6 +277,23 @@ function CSSJanus() {
 	/**
 	 * @private
 	 * @param {string} match
+	 * @param {string} property
+	 * @param {string} prefix
+	 * @param {string} offset
+	 * @param {string} suffix
+	 * @return {string}
+	 */
+	function calculateNewTranslate( match, property, prefix, offset, suffix ) {
+		return property + prefix + flipSign( offset ) + suffix;
+	}
+
+	/**
+	 * @private
+	 * @param {string} match
+	 * @param {string} property
+	 * @param {string} color
+	 * @param {string} space
+	 * @param {string} offset
 	 * @return {string}
 	 */
 	function calculateNewFourTextShadow( match, property, color, space, offset ) {
@@ -278,11 +305,15 @@ function CSSJanus() {
 		 * Transform a left-to-right stylesheet to right-to-left.
 		 *
 		 * @param {string} css Stylesheet to transform
-		 * @param {boolean} swapLtrRtlInUrl Swap 'ltr' and 'rtl' in URLs
-		 * @param {boolean} swapLeftRightInUrl Swap 'left' and 'right' in URLs
+		 * @param {Object} options Options
+		 * @param {boolean} [options.transformDirInUrl=false] Transform directions in URLs
+		 * (e.g. 'ltr', 'rtl')
+		 * @param {boolean} [options.transformEdgeInUrl=false] Transform edges in URLs
+		 * (e.g. 'left', 'right')
 		 * @return {string} Transformed stylesheet
 		 */
-		transform: function ( css, swapLtrRtlInUrl, swapLeftRightInUrl ) {
+		'transform': function ( css, options ) { // eslint-disable-line quote-props
+			// Use single quotes in this object literal key for closure compiler.
 			// Tokenizers
 			var noFlipSingleTokenizer = new Tokenizer( noFlipSingleRegExp, noFlipSingleToken ),
 				noFlipClassTokenizer = new Tokenizer( noFlipClassRegExp, noFlipClassToken ),
@@ -301,14 +332,14 @@ function CSSJanus() {
 			);
 
 			// Transform URLs
-			if ( swapLtrRtlInUrl ) {
+			if ( options.transformDirInUrl ) {
 				// Replace 'ltr' with 'rtl' and vice versa in background URLs
 				css = css
 					.replace( ltrInUrlRegExp, '$1' + temporaryToken )
 					.replace( rtlInUrlRegExp, '$1ltr' )
 					.replace( temporaryTokenRegExp, 'rtl' );
 			}
-			if ( swapLeftRightInUrl ) {
+			if ( options.transformEdgeInUrl ) {
 				// Replace 'left' with 'right' and vice versa in background URLs
 				css = css
 					.replace( leftInUrlRegExp, '$1' + temporaryToken )
@@ -335,7 +366,11 @@ function CSSJanus() {
 				// Shadows
 				.replace( boxShadowRegExp, calculateNewShadow )
 				.replace( textShadow1RegExp, calculateNewFourTextShadow )
-				.replace( textShadow2RegExp, calculateNewShadow )
+				.replace( textShadow2RegExp, calculateNewFourTextShadow )
+				.replace( textShadow3RegExp, calculateNewShadow )
+				// Translate
+				.replace( translateXRegExp, calculateNewTranslate )
+				.replace( translateRegExp, calculateNewTranslate )
 				// Swap the second and fourth parts in four-part notation rules
 				// like padding: 1px 2px 3px 4px;
 				.replace( fourNotationQuantRegExp, '$1$2$3$8$5$6$7$4$9' )
@@ -362,16 +397,39 @@ cssjanus = new CSSJanus();
 
 /* Exports */
 
-/**
- * Transform a left-to-right stylesheet to right-to-left.
- *
- * This function is a static wrapper around the transform method of an instance of CSSJanus.
- *
- * @param {string} css Stylesheet to transform
- * @param {boolean} [swapLtrRtlInUrl=false] Swap 'ltr' and 'rtl' in URLs
- * @param {boolean} [swapLeftRightInUrl=false] Swap 'left' and 'right' in URLs
- * @return {string} Transformed stylesheet
- */
-exports.transform = function ( css, swapLtrRtlInUrl, swapLeftRightInUrl ) {
-	return cssjanus.transform( css, swapLtrRtlInUrl, swapLeftRightInUrl );
-};
+if ( typeof module !== 'undefined' && module.exports ) {
+	/**
+	 * Transform a left-to-right stylesheet to right-to-left.
+	 *
+	 * This function is a static wrapper around the transform method of an instance of CSSJanus.
+	 *
+	 * @param {string} css Stylesheet to transform
+	 * @param {Object|boolean} [options] Options object, or transformDirInUrl option (back-compat)
+	 * @param {boolean} [options.transformDirInUrl=false] Transform directions in URLs
+	 * (e.g. 'ltr', 'rtl')
+	 * @param {boolean} [options.transformEdgeInUrl=false] Transform edges in URLs
+	 * (e.g. 'left', 'right')
+	 * @param {boolean} [transformEdgeInUrl] Back-compat parameter
+	 * @return {string} Transformed stylesheet
+	 */
+	exports.transform = function ( css, options, transformEdgeInUrl ) {
+		var norm;
+		if ( typeof options === 'object' ) {
+			norm = options;
+		} else {
+			norm = {};
+			if ( typeof options === 'boolean' ) {
+				norm.transformDirInUrl = options;
+			}
+			if ( typeof transformEdgeInUrl === 'boolean' ) {
+				norm.transformEdgeInUrl = transformEdgeInUrl;
+			}
+		}
+		return cssjanus.transform( css, norm );
+	};
+} else if ( typeof window !== 'undefined' ) {
+	/* global window */
+	// Allow cssjanus to be used in a browser.
+	// eslint-disable-next-line dot-notation
+	window[ 'cssjanus' ] = cssjanus;
+}

@@ -1,7 +1,14 @@
 language: node_js
 node_js:
-  - "0.10"
-  - "0.12"
+  - "14"
+  - "12"
+  - "10"
+script:
+  - npm test
+  - npm run cover
+after_success:
+  - node test/bench
+  - npm run coveralls
 notifications:
   irc:
     channels:
